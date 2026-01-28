@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Game Box Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: transparent;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+        }
+        
+        #controls.hidden {
+            display: none;
+        }
+        
+        button {
+            background: #9147ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px 0;
+            width: 100%;
+        }
+        
+        button:hover {
+            background: #7c3aed;
+        }
+        
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        
+        input {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background: #222;
+            color: white;
+            box-sizing: border-box;
+        }
+        
+        label {
+            display: block;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #aaa;
+        }
+        
+        #status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #aaa;
+        }
+        
+        .success {
+            color: #4ade80 !important;
+        }
+        
+        .error {
+            color: #ef4444 !important;
+        }
+        
+        #gameInfo {
+            margin-top: 10px;
+            font-size: 12px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            max-width: 250px;
+        }
+        
+        .toggle-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            z-index: 101;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    
+    <button class="toggle-controls" onclick="toggleControls()">⚙️</button>
+    
+    <div id="controls">
+        <h3 style="margin-top: 0;">Game Box Overlay</h3>
+        
+        <label>Twitch Username:</label>
+        <input type="text" id="twitchUsername" value="TheReal_JP" placeholder="Enter Twitch username">
+        
+        <label>Twitch Client ID:</label>
+        <input type="text" id="clientId" placeholder="Get from dev.twitch.tv">
+        
+        <label>Twitch Client Secret:</label>
+        <input type="password" id="clientSecret" placeholder="Get from dev.twitch.tv">
+        
+        <button onclick="saveCredentials()">Save Credentials</button>
+        <button onclick="fetchCurrentGame()" id="fetchBtn">Fetch Current Game</button>
+        
+        <div id="status"></div>
+        <div id="gameInfo" style="display: none;"></div>
+        
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #555;">
+            <p style="font-size: 11px; color: #888; margin: 5px 0;">
+                <strong>Setup Instructions:</strong><br>
+                1. Go to <a href="https://dev.twitch.tv/console/apps" target="_blank" style="color: #9147ff;">dev.twitch.tv/console/apps</a><br>
+                2. Create a new application<br>
+                3. Copy Client ID and Secret<br>
+                4. Paste them above and click Save
+            </p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Configuration
+        const TWITCH_USERNAME = 'TheReal_JP';
+        let twitchAccessToken = null;
+        let currentGame = null;
+        
+        // Console-specific box proportions (width : height : depth)
+        const CONSOLE_PROPORTIONS = {
+            'PlayStation 5': { w: 1, h: 1.35, d: 0.15 },
+            'PlayStation 4': { w: 1, h: 1.35, d: 0.15 },
+            'PlayStation 3': { w: 1, h: 1.30, d: 0.15 },
+            'PlayStation 2': { w: 1, h: 1.35, d: 0.15 },
+            'PlayStation': { w: 1, h: 1.35, d: 0.15 },
+            'Xbox Series X/S': { w: 1, h: 1.35, d: 0.15 },
+            'Xbox One': { w: 1, h: 1.35, d: 0.15 },
+            'Xbox 360': { w: 1, h: 1.35, d: 0.15 },
+            'Xbox': { w: 1, h: 1.35, d: 0.15 },
+            'Nintendo Switch': { w: 1, h: 1.15, d: 0.12 },
+            'Wii U': { w: 1, h: 1.35, d: 0.15 },
+            'Wii': { w: 1, h: 1.35, d: 0.15 },
+            'GameCube': { w: 1, h: 1.35, d: 0.15 },
+            'Nintendo 64': { w: 0.85, h: 1, d: 0.25 },
+            'Super Nintendo': { w: 0.85, h: 1, d: 0.25 },
+            'Nintendo Entertainment System': { w: 0.85, h: 1, d: 0.25 },
+            'Game Boy Advance': { w: 0.9, h: 1, d: 0.2 },
+            'PC': { w: 1, h: 1.35, d: 0.18 },
+            'default': { w: 1, h: 1.35, d: 0.15 }
+        };
+        
+        // Three.js setup
+        let scene, camera, renderer, box, boxGroup;
+        
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+            
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0);
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+            directionalLight2.position.set(-5, -5, 5);
+            scene.add(directionalLight2);
+            
+            // Create initial placeholder box
+            createBox();
+            
+            animate();
+        }
+        
+        function createBox(proportions = CONSOLE_PROPORTIONS.default, coverUrl = null, platform = 'Unknown') {
+            // Remove existing box if any
+            if (boxGroup) {
+                scene.remove(boxGroup);
+            }
+            
+            boxGroup = new THREE.Group();
+            
+            const baseSize = 2.5;
+            const width = baseSize * proportions.w;
+            const height = baseSize * proportions.h;
+            const depth = baseSize * proportions.d;
+            
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            
+            // Materials for each face
+            const materials = [];
+            
+            if (coverUrl) {
+                const loader = new THREE.TextureLoader();
+                
+                // Front face (cover)
+                loader.load(coverUrl, (texture) => {
+                    materials[4] = new THREE.MeshPhongMaterial({ map: texture });
+                    updateBoxMaterials();
+                });
+                
+                // Create placeholder materials while loading
+                for (let i = 0; i < 6; i++) {
+                    materials[i] = new THREE.MeshPhongMaterial({ 
+                        color: i === 4 ? 0x333333 : 0x1a1a1a,
+                        shininess: 30
+                    });
+                }
+            } else {
+                // Default placeholder box
+                for (let i = 0; i < 6; i++) {
+                    materials[i] = new THREE.MeshPhongMaterial({ 
+                        color: 0x333333,
+                        shininess: 30
+                    });
+                }
+            }
+            
+            box = new THREE.Mesh(geometry, materials);
+            boxGroup.add(box);
+            scene.add(boxGroup);
+            
+            function updateBoxMaterials() {
+                if (box) {
+                    box.material = materials;
+                    box.material.needsUpdate = true;
+                }
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (boxGroup) {
+                boxGroup.rotation.y += 0.005;
+                boxGroup.rotation.x = Math.sin(Date.now() * 0.0001) * 0.1;
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Credential management
+        function saveCredentials() {
+            const clientId = document.getElementById('clientId').value.trim();
+            const clientSecret = document.getElementById('clientSecret').value.trim();
+            const username = document.getElementById('twitchUsername').value.trim();
+            
+            if (!clientId || !clientSecret) {
+                updateStatus('Please enter both Client ID and Secret', 'error');
+                return;
+            }
+            
+            localStorage.setItem('twitchClientId', clientId);
+            localStorage.setItem('twitchClientSecret', clientSecret);
+            localStorage.setItem('twitchUsername', username);
+            
+            updateStatus('Credentials saved!', 'success');
+        }
+        
+        function loadCredentials() {
+            const clientId = localStorage.getItem('twitchClientId');
+            const clientSecret = localStorage.getItem('twitchClientSecret');
+            const username = localStorage.getItem('twitchUsername') || TWITCH_USERNAME;
+            
+            if (clientId) document.getElementById('clientId').value = clientId;
+            if (clientSecret) document.getElementById('clientSecret').value = clientSecret;
+            document.getElementById('twitchUsername').value = username;
+        }
+        
+        // Twitch API
+        async function getTwitchAccessToken() {
+            const clientId = localStorage.getItem('twitchClientId');
+            const clientSecret = localStorage.getItem('twitchClientSecret');
+            
+            if (!clientId || !clientSecret) {
+                throw new Error('Please save your Twitch credentials first');
+            }
+            
+            const response = await fetch('https://id.twitch.tv/oauth2/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `client_id=${clientId}&client_secret=${clientSecret}&grant_type=client_credentials`
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to get Twitch access token. Check your credentials.');
+            }
+            
+            const data = await response.json();
+            return data.access_token;
+        }
+        
+        async function getCurrentGame() {
+            const username = document.getElementById('twitchUsername').value.trim() || TWITCH_USERNAME;
+            const clientId = localStorage.getItem('twitchClientId');
+            
+            if (!twitchAccessToken) {
+                twitchAccessToken = await getTwitchAccessToken();
+            }
+            
+            // Get user ID
+            const userResponse = await fetch(`https://api.twitch.tv/helix/users?login=${username}`, {
+                headers: {
+                    'Client-ID': clientId,
+                    'Authorization': `Bearer ${twitchAccessToken}`
+                }
+            });
+            
+            if (!userResponse.ok) {
+                throw new Error('Failed to fetch Twitch user');
+            }
+            
+            const userData = await userResponse.json();
+            if (!userData.data || userData.data.length === 0) {
+                throw new Error('User not found');
+            }
+            
+            const userId = userData.data[0].id;
+            
+            // Get channel info
+            const channelResponse = await fetch(`https://api.twitch.tv/helix/channels?broadcaster_id=${userId}`, {
+                headers: {
+                    'Client-ID': clientId,
+                    'Authorization': `Bearer ${twitchAccessToken}`
+                }
+            });
+            
+            if (!channelResponse.ok) {
+                throw new Error('Failed to fetch channel info');
+            }
+            
+            const channelData = await channelResponse.json();
+            if (!channelData.data || channelData.data.length === 0) {
+                throw new Error('No channel data found');
+            }
+            
+            return channelData.data[0].game_name;
+        }
+        
+        // IGDB API
+        async function getGameCover(gameName) {
+            const clientId = localStorage.getItem('twitchClientId');
+            
+            if (!twitchAccessToken) {
+                twitchAccessToken = await getTwitchAccessToken();
+            }
+            
+            // Search for game
+            const searchResponse = await fetch('https://api.igdb.com/v4/games', {
+                method: 'POST',
+                headers: {
+                    'Client-ID': clientId,
+                    'Authorization': `Bearer ${twitchAccessToken}`,
+                    'Content-Type': 'text/plain'
+                },
+                body: `search "${gameName}"; fields name,cover.url,cover.image_id,platforms.name; limit 1;`
+            });
+            
+            if (!searchResponse.ok) {
+                throw new Error('Failed to search IGDB');
+            }
+            
+            const games = await searchResponse.json();
+            if (!games || games.length === 0) {
+                throw new Error('Game not found in IGDB');
+            }
+            
+            const game = games[0];
+            let coverUrl = null;
+            let platform = 'Unknown';
+            
+            if (game.cover && game.cover.image_id) {
+                coverUrl = `https://images.igdb.com/igdb/image/upload/t_cover_big/${game.cover.image_id}.jpg`;
+            }
+            
+            if (game.platforms && game.platforms.length > 0) {
+                platform = game.platforms[0].name;
+            }
+            
+            return { coverUrl, platform, gameName: game.name };
+        }
+        
+        function getPlatformProportions(platform) {
+            for (const [key, proportions] of Object.entries(CONSOLE_PROPORTIONS)) {
+                if (platform.includes(key)) {
+                    return proportions;
+                }
+            }
+            return CONSOLE_PROPORTIONS.default;
+        }
+        
+        async function fetchCurrentGame() {
+            const btn = document.getElementById('fetchBtn');
+            btn.disabled = true;
+            updateStatus('Fetching current game...', '');
+            
+            try {
+                const gameName = await getCurrentGame();
+                
+                if (!gameName) {
+                    updateStatus('No game set on Twitch', 'error');
+                    btn.disabled = false;
+                    return;
+                }
+                
+                updateStatus(`Found: ${gameName}. Getting cover art...`, '');
+                
+                const { coverUrl, platform, gameName: officialName } = await getGameCover(gameName);
+                
+                const proportions = getPlatformProportions(platform);
+                createBox(proportions, coverUrl, platform);
+                
+                currentGame = { name: officialName, platform, coverUrl };
+                
+                document.getElementById('gameInfo').style.display = 'block';
+                document.getElementById('gameInfo').innerHTML = `
+                    <strong>Game:</strong> ${officialName}<br>
+                    <strong>Platform:</strong> ${platform}
+                `;
+                
+                updateStatus('Game box updated!', 'success');
+                
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = type;
+        }
+        
+        function toggleControls() {
+            const controls = document.getElementById('controls');
+            controls.classList.toggle('hidden');
+        }
+        
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Initialize
+        loadCredentials();
+        initThreeJS();
+    </script>
+</body>
+</html>
